@@ -14,48 +14,48 @@
 #include <limits.h> 
 
 typedef struct {
-    int show_links;
-    int show_dirs;
-    int show_files;
-    int sort_output;
+    int showLinks;
+    int showDirs;
+    int showFiles;
+    int needSort;
 } Options;
 
 typedef struct {
     char *path;
 } FileInfo;
 
-FileInfo *file_list = NULL;
-size_t file_count = 0;
-size_t file_list_capacity = 0;
+FileInfo *fileList = NULL;
+size_t fileCount = 0;
+size_t fileListCapacity = 0;
 Options options;
 
-int fileinfo_compare(const void *a, const void *b) {
+int compare(const void *a, const void *b) {
     const FileInfo *fi1 = (const FileInfo *)a;
     const FileInfo *fi2 = (const FileInfo *)b;
     return strcoll(fi1->path, fi2->path);
 }
 
-void add_file_info(const char *fpath) {
-    if (file_count == file_list_capacity) {
-        file_list_capacity = (file_list_capacity == 0) ? 16 : file_list_capacity * 2;
-        file_list = realloc(file_list, file_list_capacity * sizeof(FileInfo));
-        if (file_list == NULL) {
+void addFile(const char *fpath) {
+    if (fileCount == fileListCapacity) {
+        fileListCapacity = (fileListCapacity == 0) ? 16 : fileListCapacity * 2;
+        fileList = realloc(fileList, fileListCapacity * sizeof(FileInfo));
+        if (fileList == NULL) {
             perror("realloc failed");
             exit(EXIT_FAILURE);
         }
     }
 
-    file_list[file_count].path = strdup(fpath);
-    if (file_list[file_count].path == NULL) {
+    fileList[fileCount].path = strdup(fpath);
+    if (fileList[fileCount].path == NULL) {
         perror("strdup failed");
         exit(EXIT_FAILURE);
     }
-    file_count++;
+    fileCount++;
 }
 
-void process_entry(const char *dirpath, const struct dirent *entry);
+void scanEntry(const char *dirpath, const struct dirent *entry);
 
-void process_directory(const char *dirpath) {
+void scanDirectory(const char *dirpath) {
     DIR *dir = opendir(dirpath);
     if (dir == NULL) {
         perror("opendir failed");
@@ -68,7 +68,7 @@ void process_directory(const char *dirpath) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-        process_entry(dirpath, entry); 
+        scanEntry(dirpath, entry); 
     }
 
     if (errno != 0) {
@@ -77,7 +77,7 @@ void process_directory(const char *dirpath) {
     closedir(dir);
 }
 
-void process_entry(const char *dirpath, const struct dirent *entry) {
+void scanEntry(const char *dirpath, const struct dirent *entry) {
     char fullpath[PATH_MAX];
 
     
@@ -97,36 +97,36 @@ void process_entry(const char *dirpath, const struct dirent *entry) {
         return;
     }
 
-    if ((options.show_links && S_ISLNK(st.st_mode)) ||
-        (options.show_dirs && S_ISDIR(st.st_mode)) ||
-        (options.show_files && S_ISREG(st.st_mode)) ||
-        (!options.show_links && !options.show_dirs && !options.show_files))
+    if ((options.showLinks && S_ISLNK(st.st_mode)) ||
+        (options.showDirs && S_ISDIR(st.st_mode)) ||
+        (options.showFiles && S_ISREG(st.st_mode)) ||
+        (!options.showLinks && !options.showDirs && !options.showFiles))
     {
-        add_file_info(fullpath);
+        addFile(fullpath);
     }
     
     if (S_ISDIR(st.st_mode) && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-        process_directory(fullpath);
+        scanDirectory(fullpath);
     }
 }
 
-Options parse_options(int argc, char *argv[]) {
+Options getOptions(int argc, char *argv[]) {
     Options opts = {0, 0, 0, 0};
     int opt;
 
     while ((opt = getopt(argc, argv, "ldfs")) != -1) {
         switch (opt) {
             case 'l':
-                opts.show_links = 1;
+                opts.showLinks = 1;
                 break;
             case 'd':
-                opts.show_dirs = 1;
+                opts.showDirs = 1;
                 break;
             case 'f':
-                opts.show_files = 1;
+                opts.showFiles = 1;
                 break;
             case 's':
-                opts.sort_output = 1;
+                opts.needSort = 1;
                 break;
             default:
                 fprintf(stderr, "Usage: %s [-ldfs] [dir]\n", argv[0]);
@@ -136,46 +136,46 @@ Options parse_options(int argc, char *argv[]) {
     return opts;
 }
 
-void sort_file_list() {
-    if (options.sort_output && file_count > 0) {
-        qsort(file_list, file_count, sizeof(FileInfo), fileinfo_compare);
+void sortList() {
+    if (options.needSort && fileCount > 0) {
+        qsort(fileList, fileCount, sizeof(FileInfo), compare);
     }
 }
 
-void print_file_list() {
-    for (size_t i = 0; i < file_count; i++) {
-        printf("%s\n", file_list[i].path);
-        free(file_list[i].path);
+void printList() {
+    for (size_t i = 0; i < fileCount; i++) {
+        printf("%s\n", fileList[i].path);
+        free(fileList[i].path);
     }
 }
 
 int main(int argc, char *argv[]) {
-    options = parse_options(argc, argv);
+    options = getOptions(argc, argv);
     setlocale(LC_ALL, ""); 
 
-    const char *start_dir = (optind < argc) ? argv[optind] : ".";
+    const char *startDir = (optind < argc) ? argv[optind] : ".";
 
     struct stat st;
-    if (stat(start_dir, &st) == -1) {
+    if (stat(startDir, &st) == -1) {
         perror("stat failed");
         return 1;
     }
 
     if (S_ISDIR(st.st_mode)) {
-        process_directory(start_dir); 
+        scanDirectory(startDir); 
     } else {
         
-        if ((options.show_files && S_ISREG(st.st_mode)) ||
-            (options.show_links && S_ISLNK(st.st_mode)) ||
-            (!options.show_links && !options.show_dirs && !options.show_files))
+        if ((options.showFiles && S_ISREG(st.st_mode)) ||
+            (options.showLinks && S_ISLNK(st.st_mode)) ||
+            (!options.showLinks && !options.showDirs && !options.showFiles))
         {
-            add_file_info(start_dir);
+            addFile(startDir);
         }
     }
 
-    sort_file_list(); 
-    print_file_list(); 
+    sortList(); 
+    printList(); 
 
-    free(file_list);
+    free(fileList);
     return 0;
 }
